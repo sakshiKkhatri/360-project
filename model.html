@@ -1,188 +1,228 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>GLB Model Viewer — auto-fit</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>360 Panorama + GLB Model Viewer</title>
 
   <!-- A-Frame -->
   <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
-  <!-- Orbit controls -->
+  <!-- orbit-controls to inspect model when in Model Mode -->
   <script src="https://unpkg.com/aframe-orbit-controls-component@0.3.0/dist/aframe-orbit-controls-component.min.js"></script>
 
   <style>
-    :root {
+    :root{
       --ui-bg: rgba(0,0,0,0.45);
       --btn-bg: rgba(255,255,255,0.08);
       --btn-radius: 12px;
       --btn-padding: 10px 12px;
       --safe-bottom: env(safe-area-inset-bottom, 12px);
     }
-    html,body { height:100%; margin:0; background:#111; color:#fff; font-family:Inter,system-ui,Arial; }
-    #controls { position:absolute; z-index:1500; display:flex; gap:10px; flex-wrap:wrap; }
-    @media (min-width:701px){ #controls{ left:12px; top:12px; } }
-    @media (max-width:700px){ #controls{ left:50%; bottom:calc(var(--safe-bottom)+14px); transform:translateX(-50%); } }
-    .btn{ background:var(--btn-bg); border:1px solid rgba(255,255,255,0.06); color:#fff; padding:var(--btn-padding); border-radius:var(--btn-radius); cursor:pointer; font-size:14px; }
-    .btn:active{ transform:translateY(1px); }
-    #modelName{ position:absolute; right:12px; top:12px; z-index:1400; background:var(--ui-bg); padding:8px 12px; border-radius:10px; font-size:13px; }
-    @media (max-width:700px){ #modelName{ display:none; } }
-    a-scene{ width:100%; height:100vh; display:block; }
+    html,body{height:100%;margin:0;background:#000;color:#fff;font-family:Inter,system-ui,Arial}
+    a-scene{width:100%;height:100vh;display:block;}
+
+    /* Controls */
+    #controls{position:absolute;z-index:1500;display:flex;gap:10px;flex-wrap:wrap;pointer-events:auto}
+    @media(min-width:701px){#controls{left:12px;top:12px}}
+    @media(max-width:700px){#controls{left:50%;bottom:calc(var(--safe-bottom)+14px);transform:translateX(-50%)}}
+
+    .btn{background:var(--btn-bg);border:1px solid rgba(255,255,255,0.06);color:#fff;padding:var(--btn-padding);border-radius:var(--btn-radius);cursor:pointer;font-size:14px}
+    .btn:active{transform:translateY(1px)}
+
+    /* small info */
+    #info{position:absolute;right:12px;top:12px;z-index:1400;background:var(--ui-bg);padding:8px 12px;border-radius:10px;font-size:13px}
+    @media(max-width:700px){#info{display:none}}
+
+    /* note for mobile above controls */
+    #note{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--safe-bottom)+72px);z-index:1400;background:var(--ui-bg);padding:8px 10px;border-radius:10px;font-size:13px;display:none}
+    @media(max-width:700px){#note{display:block}}
   </style>
 </head>
 <body>
 
-  <div id="controls">
-    <button id="resetBtn" class="btn">Reset</button>
-    <button id="fullscreenBtn" class="btn">Fullscreen</button>
-    <button id="enterVrBtn" class="btn">Enter VR</button>
+  <!-- Controls -->
+  <div id="controls" role="toolbar" aria-label="viewer controls">
+    <button id="modeBtn" class="btn" title="Toggle Panorama / Model">View model</button>
+    <button id="resetBtn" class="btn" title="Reset camera & mode">Reset</button>
+    <button id="fullscreenBtn" class="btn" title="Toggle fullscreen">Fullscreen</button>
+    <button id="enterVrBtn" class="btn" title="Enter VR (HTTPS)">Enter VR</button>
   </div>
 
-  <div id="modelName">Loading: example-model.glb</div>
+  <div id="info">Mode: <span id="modeLabel">Panorama</span></div>
+  <div id="note">Drag to look. Tap "View model" to inspect the 3D asset.</div>
 
-  <a-scene id="scene" embedded vr-mode-ui="enabled:true" background="color:#000">
+  <!-- Scene -->
+  <a-scene embedded vr-mode-ui="enabled:true" background="color:#000">
     <a-assets>
-      <a-asset-item id="defaultModel" src="example-model.glb"></a-asset-item>
+      <!-- sky pano -->
+      <img id="panorama" src="image.jpg" crossorigin="anonymous" alt="panorama">
+      <!-- model -->
+      <a-asset-item id="theModel" src="example-model.glb"></a-asset-item>
     </a-assets>
 
-    <!-- Camera with orbit controls -->
+    <!-- sky (360 image) -->
+    <a-sky id="sky" src="#panorama" rotation="0 -90 0" material="shader:flat"></a-sky>
+
+    <!-- camera: we'll toggle components between look-controls (panorama) and orbit-controls (model) -->
     <a-entity id="cameraRig">
-      <a-entity id="camera" camera position="0 1.6 3"
-                orbit-controls="target: 0 1 0; enableDamping: true; dampingFactor:0.125; rotateSpeed:0.6; autoRotate: false; enableZoom:true; minDistance:0.4; maxDistance:50">
+      <a-entity id="mainCamera" camera="fov: 60" position="0 1.6 0"
+                look-controls="enabled:true; magicWindowTrackingEnabled:true">
       </a-entity>
     </a-entity>
 
-    <!-- Lighting (added stronger directional lights) -->
-    <a-entity light="type: ambient; intensity: 0.8"></a-entity>
-    <a-entity light="type: directional; intensity: 1.0" position="1 3 2"></a-entity>
-    <a-entity light="type: directional; intensity: 0.6" position="-2 1 -1"></a-entity>
+    <!-- Lights -->
+    <a-entity light="type: ambient; intensity:0.8"></a-entity>
+    <a-entity light="type: directional; intensity:1.0" position="1 3 2"></a-entity>
+    <a-entity light="type: directional; intensity:0.6" position="-2 1 -1"></a-entity>
 
-    <!-- Ground (visual anchor; optional) -->
-    <a-plane rotation="-90 0 0" width="50" height="50" color="#222" material="roughness:1;metalness:0"></a-plane>
+    <!-- small ground for model reference (invisible in panorama because sky surrounds) -->
+    <a-plane id="ground" rotation="-90 0 0" width="50" height="50" color="#222" material="roughness:1;metalness:0" visible="true"></a-plane>
 
-    <!-- Model root: we load model into this and then adjust transforms -->
-    <a-entity id="modelRoot" visible="true" position="0 0 0" rotation="0 0 0" scale="1 1 1" gltf-model="#defaultModel"></a-entity>
+    <!-- Model root (placed in the scene) -->
+    <!-- position it a few meters in front by default; auto-fit below will adjust on load -->
+    <a-entity id="modelRoot" position="0 0 -3" rotation="0 0 0" scale="1 1 1" visible="true" gltf-model="#theModel"></a-entity>
   </a-scene>
 
 <script>
-  // Auto-fit helper: centers, scales, and positions camera to frame model
-  (function(){
-    const modelRoot = document.getElementById('modelRoot');
-    const cameraEl = document.getElementById('camera');
-    const modelName = document.getElementById('modelName');
-    const scene = document.getElementById('scene');
+/*
+  Behavior:
+  - Default mode: Panorama (look-controls on camera). The model sits in the scene but you look around with the panorama.
+  - Model mode (toggle by modeBtn): switch camera to orbit-controls, move camera back & set orbit target to model center for inspection.
+  - Auto-fit: when model loads, compute bbox, center & scale model; remember center for orbit target.
+  - Reset: returns to Panorama mode and camera origin.
+*/
 
-    function safeNumber(v){ return (typeof v === 'number' && isFinite(v)) ? v : 0; }
+(function(){
+  const modeBtn = document.getElementById('modeBtn');
+  const modeLabel = document.getElementById('modeLabel');
+  const resetBtn = document.getElementById('resetBtn');
+  const fullscreenBtn = document.getElementById('fullscreenBtn');
+  const enterVrBtn = document.getElementById('enterVrBtn');
 
-    modelRoot.addEventListener('model-loaded', (evt) => {
-      try {
-        modelName.textContent = 'Loaded: example-model.glb';
-        // evt.detail.model is the loaded object (THREE.Group)
-        const obj = evt.detail && evt.detail.model ? evt.detail.model : modelRoot.getObject3D('mesh') || modelRoot.getObject3D('gltf');
-        // prefer the glTF scene if present
-        const threeObject = obj.scene || obj;
-        if (!threeObject) {
-          console.warn('Loaded model object not found in event.detail.model — falling back to modelRoot.object3D');
-        }
+  const cameraEl = document.getElementById('mainCamera');
+  const modelRoot = document.getElementById('modelRoot');
+  const sceneEl = document.querySelector('a-scene');
 
-        // compute bbox
-        const box = new THREE.Box3().setFromObject(threeObject);
-        const size = new THREE.Vector3();
-        const center = new THREE.Vector3();
-        box.getSize(size);
-        box.getCenter(center);
+  let mode = 'panorama'; // 'panorama' | 'model'
+  let modelCenter = { x:0, y:0, z:0 };
+  let fitted = false;
 
-        // defensive fallback
-        const maxDim = Math.max( safeNumber(size.x), safeNumber(size.y), safeNumber(size.z), 0.001 );
+  function setMode(newMode){
+    if(newMode === mode) return;
+    mode = newMode;
+    modeLabel.textContent = mode === 'panorama' ? 'Panorama' : 'Model';
+    if(mode === 'model'){
+      // switch: disable look-controls, add orbit-controls to camera, move camera back to frame model
+      cameraEl.removeAttribute('look-controls');
+      // set orbit-controls component target and enable it
+      const target = `${modelCenter.x} ${modelCenter.y} ${modelCenter.z}`;
+      cameraEl.setAttribute('orbit-controls', `target: ${target}; enableDamping: true; dampingFactor: 0.125; rotateSpeed:0.6; enableZoom:true; minDistance:0.4; maxDistance:50`);
+      // move camera back a bit to a framing position
+      // compute a simple offset along Z relative to model center
+      cameraEl.object3D.position.set(modelCenter.x, Math.max(modelCenter.y + 0.6, 1.2), modelCenter.z + 2.5);
+      modeBtn.textContent = 'Back to panorama';
+    } else {
+      // switch back: remove orbit-controls and re-enable look-controls
+      cameraEl.removeAttribute('orbit-controls');
+      cameraEl.setAttribute('look-controls', 'enabled:true; magicWindowTrackingEnabled:true');
+      cameraEl.object3D.position.set(0, 1.6, 0);
+      modeBtn.textContent = 'View model';
+    }
+  }
 
-        // 1) recentre model so its center is at origin and its base sits at y=0
-        // shift = -center ; then lift so base is at y=0: add half-height
-        const shiftX = -center.x;
-        const shiftY = -center.y + (size.y/2 || 0);
-        const shiftZ = -center.z;
-        // apply to the model's top-level object; prefer modelRoot.object3D children
-        threeObject.position.x += shiftX;
-        threeObject.position.y += shiftY;
-        threeObject.position.z += shiftZ;
+  modeBtn.addEventListener('click', () => {
+    if(!fitted){
+      // if model not yet fitted, we still allow toggle but warn briefly
+      console.log('Model not fitted yet (model-loaded not fired?) — toggling anyway.');
+    }
+    setMode(mode === 'panorama' ? 'model' : 'panorama');
+  });
 
-        // If the model root has a parent (it will), we don't move modelRoot but the object's position inside it.
-        // Some glTFs attach at child[0], so ensure we position the top-level group:
-        // (the code above updates the loaded object's position directly)
+  resetBtn.addEventListener('click', () => {
+    setMode('panorama');
+    // reset camera position/orbit target
+    cameraEl.object3D.position.set(0,1.6,0);
+    cameraEl.setAttribute('orbit-controls', 'target:0 0 0');
+  });
 
-        // 2) scale model to reasonable size if necessary (normalize so maxDim ~ 1)
-        // only scale if model is absurdly big (>10) or tiny (<0.05)
-        let scaleFactor = 1;
-        if (maxDim > 10) scaleFactor = 1.0 / maxDim * 2.0; // shrink
-        if (maxDim < 0.05) scaleFactor = 1.0 / maxDim * 0.8; // grow
-        if (scaleFactor !== 1) {
-          modelRoot.object3D.scale.setScalar(scaleFactor);
-        }
+  fullscreenBtn.addEventListener('click', () => {
+    if(!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+    else document.exitFullscreen?.();
+  });
 
-        // recompute bounding box after transform/scale
-        const box2 = new THREE.Box3().setFromObject(threeObject);
-        const size2 = new THREE.Vector3();
-        const center2 = new THREE.Vector3();
-        box2.getSize(size2);
-        box2.getCenter(center2);
+  enterVrBtn.addEventListener('click', async () => {
+    try {
+      if(sceneEl.is('vr-mode')) sceneEl.exitVR();
+      else await sceneEl.enterVR();
+    } catch(e){
+      alert('VR requires HTTPS / localhost and a compatible device/browser.');
+    }
+  });
 
-        // 3) place modelRoot such that models base is near y=0
-        // compute desired camera distance: use size2 diagonal
-        const maxDim2 = Math.max(size2.x, size2.y, size2.z, 0.001);
-        const fov = (cameraEl.getAttribute('camera') && cameraEl.getAttribute('camera').fov) ? cameraEl.getAttribute('camera').fov : 50;
-        const fovRad = THREE.MathUtils.degToRad(fov);
-        // distance formula to fit model in view: distance = (maxDim2/2) / tan(fov/2) * padding
-        const distance = (maxDim2 * 0.6) / Math.tan(fovRad / 2);
-        // position camera at (center.x, center.y + size2.y*0.5, center.z + distance)
-        const camX = center2.x;
-        const camY = Math.max(center2.y + size2.y * 0.5, 0.6);
-        const camZ = center2.z + distance * 1.1; // small extra padding
-
-        // apply camera position
-        cameraEl.object3D.position.set(camX, camY, camZ);
-        // update orbit-controls target to center of model
-        cameraEl.setAttribute('orbit-controls', 'target', `${center2.x} ${center2.y} ${center2.z}`);
-
-        // Make sure modelRoot is visible
-        modelRoot.setAttribute('visible', true);
-
-        console.log('Model auto-fit complete — size:', size2, 'center:', center2, 'camera positioned to:', camX, camY, camZ);
-      } catch (err) {
-        console.error('Auto-fit error:', err);
+  // Auto-fit model on load: center, scale reasonably, compute modelCenter
+  modelRoot.addEventListener('model-loaded', (ev) => {
+    try {
+      console.log('model-loaded event', ev);
+      const loaded = ev.detail && ev.detail.model ? ev.detail.model : modelRoot.getObject3D('mesh') || modelRoot.getObject3D('gltf');
+      const obj = (loaded && loaded.scene) ? loaded.scene : loaded;
+      if(!obj){
+        console.warn('Could not find three.js object for model.');
+        return;
       }
-    });
+      // compute bbox
+      const box = new THREE.Box3().setFromObject(obj);
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      box.getSize(size);
+      box.getCenter(center);
 
-    // If model fails to load, show message
-    modelRoot.addEventListener('error', (e) => {
-      console.error('Model load error', e);
-      modelName.textContent = 'Model failed to load — check console';
-    });
+      // shift model so its center is at origin and base sits near y=0
+      // shift object by -center, then raise so lowest y = 0.
+      // compute minY:
+      const min = box.min;
+      const shiftX = -center.x;
+      const shiftY = -min.y; // move minY to zero
+      const shiftZ = -center.z;
+      obj.position.x += shiftX;
+      obj.position.y += shiftY;
+      obj.position.z += shiftZ;
 
-    // Reset logic: bring camera back to a sane default
-    document.getElementById('resetBtn').addEventListener('click', () => {
-      cameraEl.object3D.position.set(0, 1.6, 3);
-      cameraEl.setAttribute('orbit-controls', 'target', '0 1 0');
-      console.log('Reset camera');
-    });
+      // scale model if too big/small
+      const maxDim = Math.max(size.x, size.y, size.z, 0.0001);
+      let scaleFactor = 1;
+      if(maxDim > 10) scaleFactor = 1.0 / maxDim * 2.0;
+      if(maxDim < 0.05) scaleFactor = 1.0 / maxDim * 0.8;
+      if(scaleFactor !== 1) modelRoot.object3D.scale.setScalar(scaleFactor);
 
-    // Fullscreen
-    document.getElementById('fullscreenBtn').addEventListener('click', () => {
-      if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
-      else document.exitFullscreen?.();
-    });
+      // update center after transforms
+      const box2 = new THREE.Box3().setFromObject(obj);
+      const center2 = new THREE.Vector3();
+      box2.getCenter(center2);
+      modelCenter = { x: center2.x, y: center2.y, z: center2.z };
 
-    // VR entry
-    document.getElementById('enterVrBtn').addEventListener('click', async () => {
-      try {
-        if (scene.is('vr-mode')) scene.exitVR();
-        else await scene.enterVR();
-      } catch (err) {
-        alert('Enter VR failed — use HTTPS / compatible device. See console for details.');
-        console.warn(err);
+      // make sure model is visible
+      modelRoot.setAttribute('visible', true);
+      fitted = true;
+      console.log('Model auto-fit done. center=', modelCenter, 'size=', size);
+
+      // If currently in model mode, update orbit target and camera position
+      if(mode === 'model'){
+        cameraEl.setAttribute('orbit-controls', `target: ${modelCenter.x} ${modelCenter.y} ${modelCenter.z}; enableDamping: true; dampingFactor: 0.125; rotateSpeed:0.6;`);
+        cameraEl.object3D.position.set(modelCenter.x, Math.max(modelCenter.y + 0.6, 1.2), modelCenter.z + Math.max(size.z, 2.5));
       }
-    });
+    } catch(err){
+      console.error('Auto-fit error', err);
+    }
+  });
 
-    // helpful logging
-    console.log('Viewer ready — waiting for model-loaded event.');
-  })();
+  modelRoot.addEventListener('error', (e) => { console.warn('Model error', e); alert('Model failed to load — check console.'); });
+
+  // Start in panorama mode
+  setMode('panorama');
+
+  // Helpful console info
+  console.log('Viewer ready — panorama + model loaded from assets.');
+})();
 </script>
 
 </body>

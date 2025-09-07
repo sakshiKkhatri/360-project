@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Mobile-friendly 360 Image — A-Frame Viewer</title>
+  <title>Mobile-friendly 360 Image — A-Frame Viewer (debug)</title>
 
   <!-- A-Frame -->
   <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
@@ -29,6 +29,7 @@
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
+      pointer-events: auto;
     }
 
     /* Desktop / tablet: top-left */
@@ -122,12 +123,19 @@
       font-size: 15px;
     }
     #gyroPrompt .small { font-size:13px; color: #ddd; margin-top:8px; }
+    /* small debug console on screen */
+    #onScreenLog {
+      position: absolute; left: 12px; bottom: 12px; z-index: 2500;
+      max-width: 46%; font-size:12px; background:rgba(0,0,0,0.6); padding:8px; border-radius:8px;
+      color:#ddd; display:block;
+    }
+    @media (max-width:700px){ #onScreenLog { max-width: 86%; left: 50%; transform: translateX(-50%); bottom: calc(var(--safe-bottom) + 140px);} }
   </style>
 </head>
 <body>
 
   <!-- Controls -->
-  <div id="controls">
+  <div id="controls" aria-hidden="false">
     <button id="toggleRotate" class="btn">Auto-rotate: Off</button>
     <button id="enterVR" class="btn">Enter VR</button>
     <button id="enableGyro" class="btn">Enable Gyro</button>
@@ -139,7 +147,7 @@
   <div id="note">Drag with one finger. Double-tap toggles fullscreen. On phones: tap "Enable Gyro" to use device motion.</div>
 
   <!-- iOS motion permission prompt -->
-  <div id="gyroPrompt">
+  <div id="gyroPrompt" role="dialog" aria-modal="true">
     <div style="font-weight:700">Enable Motion Sensors</div>
     <div class="small">This allows the panorama to follow your phone's orientation (gyroscope). Tap "Allow" when prompted.</div>
     <div style="margin-top:12px;">
@@ -148,11 +156,14 @@
     </div>
   </div>
 
+  <!-- on-screen debug log -->
+  <div id="onScreenLog">Console: ready</div>
+
   <!-- A-Frame scene -->
-  <a-scene embedded vr-mode-ui="enabled: true" background="color: #000">
+  <a-scene id="scene" embedded vr-mode-ui="enabled: true" background="color: #000">
     <a-assets>
       <!-- Replace with your own equirectangular image -->
-      <img id="panorama" src="image" crossorigin="anonymous" alt="360 panorama">
+      <img id="panorama" src="image.jpg" crossorigin="anonymous" alt="360 panorama">
     </a-assets>
 
     <a-sky id="sky" src="#panorama" rotation="0 -90 0" material="shader:flat"></a-sky>
@@ -163,75 +174,157 @@
   </a-scene>
 
 <script>
-  const sky = document.getElementById('sky');
-  const toggleRotateBtn = document.getElementById('toggleRotate');
-  const enterVRBtn = document.getElementById('enterVR');
-  const fullscreenBtn = document.getElementById('fullscreenBtn');
-  const enableGyroBtn = document.getElementById('enableGyro');
-  const gyroPrompt = document.getElementById('gyroPrompt');
-  const gyroAllowBtn = document.getElementById('gyroAllowBtn');
-  const gyroCancelBtn = document.getElementById('gyroCancelBtn');
-
-  // Auto-rotate
-  let rotating = false, raf=null;
-  function startRotate() {
-    if (rotating) return;
-    rotating = true;
-    toggleRotateBtn.textContent = 'Auto-rotate: On';
-    let last = performance.now();
-    const speed = 2.2;
-    function step(now) {
-      const dt = (now - last) / 1000; last = now;
-      const rot = sky.getAttribute('rotation') || {x:0,y:0,z:0};
-      sky.setAttribute('rotation',{x:rot.x, y:rot.y+speed*dt, z:rot.z});
-      if (rotating) raf=requestAnimationFrame(step);
+  (function(){
+    // small helper to log both console and on-screen div
+    function log(msg, level='log'){
+      console[level](msg);
+      const el = document.getElementById('onScreenLog');
+      if(el) el.textContent = 'Console: ' + (typeof msg === 'string' ? msg : JSON.stringify(msg));
     }
-    raf=requestAnimationFrame(step);
-  }
-  function stopRotate(){
-    rotating=false;
-    toggleRotateBtn.textContent='Auto-rotate: Off';
-    if(raf) cancelAnimationFrame(raf);
-  }
-  toggleRotateBtn.onclick=()=> rotating?stopRotate():startRotate();
 
-  // VR
-  enterVRBtn.onclick=async()=>{
-    const scene=document.querySelector('a-scene');
-    if(scene.is('vr-mode')) scene.exitVR();
-    else await scene.enterVR().catch(err=>alert('VR failed: '+err));
-  };
+    // detect insecure file:// usage
+    if(location.protocol === 'file:'){
+      log('Serving from file:// — some features (VR, loading) may be blocked. Run a local server: python -m http.server', 'warn');
+    } else {
+      log('Serving from ' + location.protocol);
+    }
 
-  // Fullscreen & double-tap
-  fullscreenBtn.onclick=toggleFullscreen;
-  let lastTap=0;
-  document.addEventListener('touchend',e=>{
-    const now=Date.now();
-    if(now-lastTap<350){toggleFullscreen(); lastTap=0;} else lastTap=now;
-  });
-  function toggleFullscreen(){
-    if(!document.fullscreenElement) document.documentElement.requestFullscreen?.();
-    else document.exitFullscreen?.();
-  }
+    // element refs
+    const sky = document.getElementById('sky');
+    const toggleRotateBtn = document.getElementById('toggleRotate');
+    const enterVRBtn = document.getElementById('enterVR');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const enableGyroBtn = document.getElementById('enableGyro');
+    const gyroPrompt = document.getElementById('gyroPrompt');
+    const gyroAllowBtn = document.getElementById('gyroAllowBtn');
+    const gyroCancelBtn = document.getElementById('gyroCancelBtn');
+    const scene = document.getElementById('scene');
 
-  // Gyro (iOS permission)
-  function isIOS13plus(){return typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function';}
-  async function requestGyroPermission(){
-    try{
-      const res=await DeviceMotionEvent.requestPermission();
-      if(res==='granted'){gyroPrompt.style.display='none'; enableGyroBtn.style.display='none'; alert('Motion enabled. Rotate your phone!');}
-      else alert('Motion denied. Use touch to look around.');
-    }catch(e){alert('Motion request error: '+e);}
-  }
-  enableGyroBtn.onclick=()=>{ if(isIOS13plus()) gyroPrompt.style.display='block'; else alert('If your device has sensors, it should work automatically.'); };
-  gyroAllowBtn.onclick=()=>requestGyroPermission();
-  gyroCancelBtn.onclick=()=>gyroPrompt.style.display='none';
+    // Safety: wait for a-scene to load and log errors
+    scene.addEventListener('loaded', ()=> log('A-Frame scene loaded'));
+    window.addEventListener('error', (e)=> log('Error: ' + e.message, 'error'));
+    window.addEventListener('unhandledrejection', (e)=> log('Promise rejection: ' + e.reason, 'error'));
 
-  // Replace image via ?img=URL
-  (()=>{
-    const p=new URLSearchParams(location.search);
-    const img=p.get('img');
-    if(img){const pan=document.getElementById('panorama'); pan.src=img; setTimeout(()=>sky.setAttribute('src','#panorama'),200);}
+    // Auto-rotate
+    let rotating = false, raf=null;
+    function startRotate() {
+      if (rotating) return;
+      rotating = true;
+      toggleRotateBtn.textContent = 'Auto-rotate: On';
+      let last = performance.now();
+      const speed = 2.2;
+      function step(now) {
+        const dt = (now - last) / 1000; last = now;
+        const rot = sky.getAttribute('rotation') || {x:0,y:0,z:0};
+        sky.setAttribute('rotation',{x:rot.x, y:rot.y+speed*dt, z:rot.z});
+        if (rotating) raf=requestAnimationFrame(step);
+      }
+      raf=requestAnimationFrame(step);
+      log('Auto-rotate started');
+    }
+    function stopRotate(){
+      rotating=false;
+      toggleRotateBtn.textContent='Auto-rotate: Off';
+      if(raf) cancelAnimationFrame(raf);
+      log('Auto-rotate stopped');
+    }
+    toggleRotateBtn.addEventListener('click', ()=> rotating?stopRotate():startRotate());
+
+    // VR: wrapped in try/catch
+    enterVRBtn.addEventListener('click', async ()=>{
+      try{
+        if(scene.is('vr-mode')) {
+          scene.exitVR();
+          log('Exiting VR');
+        } else {
+          log('Attempting to enter VR (must be HTTPS or localhost)');
+          await scene.enterVR();
+          log('Entered VR');
+        }
+      } catch(err){
+        const msg = 'VR failed: ' + (err && err.message ? err.message : err);
+        alert(msg);
+        log(msg,'error');
+      }
+    });
+
+    // Fullscreen & double-tap
+    fullscreenBtn.addEventListener('click', toggleFullscreen);
+    let lastTap=0;
+    document.addEventListener('touchend',e=>{
+      const now=Date.now();
+      if(now-lastTap<350){toggleFullscreen(); lastTap=0;} else lastTap=now;
+    });
+
+    function toggleFullscreen(){
+      if(!document.fullscreenElement){
+        document.documentElement.requestFullscreen?.().then(()=>log('Fullscreen entered')).catch(e=>log('Fullscreen error: '+e,'error'));
+      } else {
+        document.exitFullscreen?.().then(()=>log('Fullscreen exited')).catch(e=>log('Fullscreen exit error: '+e,'error'));
+      }
+    }
+
+    // Gyro (iOS permission)
+    function isIOS13plus(){ return typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function'; }
+    async function requestGyroPermission(){
+      try{
+        if(!isIOS13plus()){
+          log('No iOS permission API — device orientation should work automatically (if available)');
+          gyroPrompt.style.display='none';
+          return;
+        }
+        const res = await DeviceMotionEvent.requestPermission();
+        if(res==='granted'){
+          gyroPrompt.style.display='none';
+          enableGyroBtn.style.display='none';
+          log('Device motion permission granted');
+          alert('Motion enabled. Rotate your phone to look around.');
+        } else {
+          log('Device motion permission denied');
+          alert('Motion permission denied. Use touch to look around.');
+        }
+      } catch(e){
+        log('DeviceMotion permission error: '+e, 'error');
+        alert('Motion request error: ' + e);
+      }
+    }
+
+    enableGyroBtn.addEventListener('click', ()=>{
+      if(isIOS13plus()){
+        gyroPrompt.style.display='block';
+      } else {
+        alert('If your device has motion sensors, the panorama should respond to device rotation automatically. If not, try enabling gyroscope in browser settings.');
+      }
+    });
+    gyroAllowBtn.addEventListener('click', ()=> requestGyroPermission());
+    gyroCancelBtn.addEventListener('click', ()=> gyroPrompt.style.display='none');
+
+    // Allow ?img=URL to override the panorama
+    (function(){
+      try{
+        const params = new URLSearchParams(location.search);
+        const img = params.get('img');
+        if(img){
+          log('Loading panorama from URL param: ' + img);
+          const pan = document.getElementById('panorama');
+          pan.src = img;
+          // reload the sky texture after a short delay
+          setTimeout(()=> sky.setAttribute('src', '#panorama'), 250);
+        }
+      } catch(e){ log('Failed to parse URL param: '+e,'error'); }
+    })();
+
+    // Detect if panorama failed to load (image 404 or CORS) and show message
+    const panImg = document.getElementById('panorama');
+    panImg.addEventListener('error', ()=> {
+      log('Panorama image failed to load. Check that sample_pano1.jpg exists and is accessible (CORS/file permissions).', 'error');
+      alert('Panorama image failed to load. If you opened the file via file://, run a local server (python -m http.server). Check console for details.');
+    });
+    panImg.addEventListener('load', ()=> log('Panorama image loaded: ' + panImg.src));
+
+    // Helpful hint: log A-Frame version
+    try { log('A-Frame ' + AFRAME.version + ' detected'); } catch(e){ log('A-Frame not available', 'error'); }
+
   })();
 </script>
 

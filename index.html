@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Single 360 Image — A-Frame Viewer</title>
+
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
+
+  <style>
+    html,body { height:100%; margin:0; background:#000; color:#fff; font-family:Inter, system-ui, Arial; }
+    #controls {
+      position: absolute;
+      left: 12px;
+      top: 12px;
+      z-index: 20;
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+    .btn {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.06);
+      color: #fff;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    #caption {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      z-index: 20;
+      background: rgba(0,0,0,0.35);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    #note { position:absolute; left:12px; bottom:12px; z-index:20; font-size:12px; opacity:0.8; }
+  </style>
+</head>
+<body>
+
+  <div id="controls">
+    <button id="toggleRotate" class="btn">Auto-rotate: Off</button>
+    <button id="enterVR" class="btn">Enter VR</button>
+    <button id="fullscreenBtn" class="btn">Fullscreen</button>
+  </div>
+
+  <div id="caption">Single 360 image • replace <code>#panorama</code> src to change image</div>
+  <div id="note">Use mouse/touch to look around. On mobile, move your device.</div>
+
+  <a-scene embedded vr-mode-ui="enabled: true" background="color: #000">
+    <a-assets>
+      <!-- Replace src with your equirectangular image path (local or URL) -->
+      <img id="panorama" src="image.jpg" crossorigin="anonymous" alt="360 panorama">
+    </a-assets>
+
+    <!-- Sky mapped with the 360 image -->
+    <a-sky id="sky" src="#panorama" rotation="0 -90 0" material="shader:flat"></a-sky>
+
+    <!-- Camera + cursor -->
+    <a-entity id="cameraRig">
+      <a-entity id="camera" camera look-controls position="0 1.6 0">
+        <a-entity cursor="fuse: false; rayOrigin: mouse"
+                  geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.02"
+                  material="color: #fff; shader: flat"
+                  position="0 0 -1"></a-entity>
+      </a-entity>
+    </a-entity>
+  </a-scene>
+
+<script>
+  // Auto-rotate: rotates the sky on Y axis
+  const sky = document.getElementById('sky');
+  let rotating = false;
+  let raf = null;
+
+  function startRotate() {
+    if (rotating) return;
+    rotating = true;
+    document.getElementById('toggleRotate').textContent = 'Auto-rotate: On';
+    let last = performance.now();
+    const speed = 2.2; // degrees per second
+    function frame(now) {
+      const dt = (now - last) / 1000;
+      last = now;
+      const rot = sky.getAttribute('rotation') || {x:0,y:0,z:0};
+      sky.setAttribute('rotation', { x: rot.x, y: rot.y + speed * dt, z: rot.z });
+      if (rotating) raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(frame);
+  }
+
+  function stopRotate() {
+    rotating = false;
+    document.getElementById('toggleRotate').textContent = 'Auto-rotate: Off';
+    if (raf) cancelAnimationFrame(raf);
+    raf = null;
+  }
+
+  document.getElementById('toggleRotate').addEventListener('click', () => {
+    if (rotating) stopRotate(); else startRotate();
+  });
+
+  // VR button
+  document.getElementById('enterVR').addEventListener('click', async () => {
+    const scene = document.querySelector('a-scene');
+    if (!scene) return;
+    try {
+      if (scene.is('vr-mode')) scene.exitVR();
+      else await scene.enterVR();
+    } catch (err) {
+      alert('Unable to enter VR: ' + (err.message || err));
+    }
+  });
+
+  // Fullscreen button
+  document.getElementById('fullscreenBtn').addEventListener('click', () => {
+    const el = document.documentElement;
+    if (!document.fullscreenElement) el.requestFullscreen().catch(() => {});
+    else document.exitFullscreen();
+  });
+
+  // Allow changing image via URL param ?img=https://example.com/pano.jpg
+  (function() {
+    try {
+      const p = new URLSearchParams(location.search);
+      const img = p.get('img');
+      if (img) {
+        const pan = document.getElementById('panorama');
+        pan.src = img;
+        // force reload of sky texture
+        setTimeout(() => { sky.setAttribute('src', '#panorama'); }, 100);
+      }
+    } catch(e){}
+  })();
+</script>
+
+</body>
+</html>

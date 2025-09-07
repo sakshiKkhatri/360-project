@@ -2,140 +2,236 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Single 360 Image — A-Frame Viewer</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Mobile-friendly 360 Image — A-Frame Viewer</title>
 
   <!-- A-Frame -->
   <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
 
   <style>
-    html,body { height:100%; margin:0; background:#000; color:#fff; font-family:Inter, system-ui, Arial; }
+    :root {
+      --ui-bg: rgba(0,0,0,0.45);
+      --btn-bg: rgba(255,255,255,0.08);
+      --btn-radius: 12px;
+      --btn-padding: 12px 14px;
+      --safe-bottom: env(safe-area-inset-bottom, 16px);
+    }
+
+    html,body {
+      height:100%; margin:0; background:#000; color:#fff;
+      font-family:Inter, system-ui, Arial; -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Controls container */
     #controls {
       position: absolute;
-      left: 12px;
-      top: 12px;
-      z-index: 20;
-      display:flex;
-      gap:8px;
-      align-items:center;
+      z-index: 1200;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
     }
+
+    /* Desktop / tablet: top-left */
+    @media (min-width:701px) {
+      #controls {
+        left: 12px;
+        top: 12px;
+        flex-direction: row;
+      }
+    }
+
+    /* Mobile: bottom-center bar */
+    @media (max-width:700px) {
+      #controls {
+        left: 50%;
+        bottom: calc(var(--safe-bottom) + 12px);
+        transform: translateX(-50%);
+        flex-direction: row;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+    }
+
+    /* Buttons */
     .btn {
-      background: rgba(255,255,255,0.08);
+      background: var(--btn-bg);
       border: 1px solid rgba(255,255,255,0.06);
       color: #fff;
-      padding: 8px 10px;
-      border-radius: 8px;
+      padding: var(--btn-padding);
+      border-radius: var(--btn-radius);
       cursor: pointer;
-      font-size: 14px;
+      font-size: 15px;
+      user-select:none;
+      transition: transform .08s ease;
+      touch-action: manipulation;
     }
+    .btn:active { transform: translateY(1px); }
+
+    /* Caption: desktop only */
     #caption {
       position: absolute;
       right: 12px;
       top: 12px;
-      z-index: 20;
-      background: rgba(0,0,0,0.35);
-      padding: 8px 12px;
-      border-radius: 8px;
+      z-index:1200;
+      background: var(--ui-bg);
+      padding: 10px 12px;
+      border-radius: 10px;
       font-size: 14px;
+      max-width: 46%;
     }
-    #note { position:absolute; left:12px; bottom:12px; z-index:20; font-size:12px; opacity:0.8; }
+    @media (max-width:700px) {
+      #caption { display: none; }
+    }
+
+    /* Note text */
+    #note {
+      position:absolute;
+      z-index:1200;
+      font-size:12px;
+      opacity:0.9;
+      background:var(--ui-bg);
+      padding:8px 10px;
+      border-radius:10px;
+    }
+    @media (min-width:701px) {
+      #note { left:12px; bottom:12px; }
+    }
+    @media (max-width:700px) {
+      #note {
+        left:50%; bottom: calc(var(--safe-bottom) + 80px);
+        transform: translateX(-50%);
+        font-size:13px;
+      }
+    }
+
+    /* Big friendly enable-gyro overlay for iOS devices */
+    #gyroPrompt {
+      position: absolute;
+      left: 50%; top: 52%;
+      transform: translate(-50%, -50%);
+      z-index: 2000;
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      padding: 18px 20px;
+      border-radius: 14px;
+      text-align:center;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+      display:none;
+      max-width: 92%;
+      font-size: 15px;
+    }
+    #gyroPrompt .small { font-size:13px; color: #ddd; margin-top:8px; }
   </style>
 </head>
 <body>
 
+  <!-- Controls -->
   <div id="controls">
     <button id="toggleRotate" class="btn">Auto-rotate: Off</button>
     <button id="enterVR" class="btn">Enter VR</button>
+    <button id="enableGyro" class="btn">Enable Gyro</button>
     <button id="fullscreenBtn" class="btn">Fullscreen</button>
   </div>
 
   <div id="caption">Single 360 image • replace <code>#panorama</code> src to change image</div>
-  <div id="note">Use mouse/touch to look around. On mobile, move your device.</div>
 
+  <div id="note">Drag with one finger. Double-tap toggles fullscreen. On phones: tap "Enable Gyro" to use device motion.</div>
+
+  <!-- iOS motion permission prompt -->
+  <div id="gyroPrompt">
+    <div style="font-weight:700">Enable Motion Sensors</div>
+    <div class="small">This allows the panorama to follow your phone's orientation (gyroscope). Tap "Allow" when prompted.</div>
+    <div style="margin-top:12px;">
+      <button id="gyroAllowBtn" class="btn">Allow Motion</button>
+      <button id="gyroCancelBtn" class="btn" style="margin-left:8px">Cancel</button>
+    </div>
+  </div>
+
+  <!-- A-Frame scene -->
   <a-scene embedded vr-mode-ui="enabled: true" background="color: #000">
     <a-assets>
-      <!-- Replace src with your equirectangular image path (local or URL) -->
-      <img id="panorama" src="image.jpg" crossorigin="anonymous" alt="360 panorama">
+      <!-- Replace with your own equirectangular image -->
+      <img id="panorama" src="image" crossorigin="anonymous" alt="360 panorama">
     </a-assets>
 
-    <!-- Sky mapped with the 360 image -->
     <a-sky id="sky" src="#panorama" rotation="0 -90 0" material="shader:flat"></a-sky>
 
-    <!-- Camera + cursor -->
     <a-entity id="cameraRig">
-      <a-entity id="camera" camera look-controls position="0 1.6 0">
-        <a-entity cursor="fuse: false; rayOrigin: mouse"
-                  geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.02"
-                  material="color: #fff; shader: flat"
-                  position="0 0 -1"></a-entity>
-      </a-entity>
+      <a-entity id="camera" camera look-controls="enabled:true;magicWindowTrackingEnabled:true" position="0 1.6 0"></a-entity>
     </a-entity>
   </a-scene>
 
 <script>
-  // Auto-rotate: rotates the sky on Y axis
   const sky = document.getElementById('sky');
-  let rotating = false;
-  let raf = null;
+  const toggleRotateBtn = document.getElementById('toggleRotate');
+  const enterVRBtn = document.getElementById('enterVR');
+  const fullscreenBtn = document.getElementById('fullscreenBtn');
+  const enableGyroBtn = document.getElementById('enableGyro');
+  const gyroPrompt = document.getElementById('gyroPrompt');
+  const gyroAllowBtn = document.getElementById('gyroAllowBtn');
+  const gyroCancelBtn = document.getElementById('gyroCancelBtn');
 
+  // Auto-rotate
+  let rotating = false, raf=null;
   function startRotate() {
     if (rotating) return;
     rotating = true;
-    document.getElementById('toggleRotate').textContent = 'Auto-rotate: On';
+    toggleRotateBtn.textContent = 'Auto-rotate: On';
     let last = performance.now();
-    const speed = 2.2; // degrees per second
-    function frame(now) {
-      const dt = (now - last) / 1000;
-      last = now;
+    const speed = 2.2;
+    function step(now) {
+      const dt = (now - last) / 1000; last = now;
       const rot = sky.getAttribute('rotation') || {x:0,y:0,z:0};
-      sky.setAttribute('rotation', { x: rot.x, y: rot.y + speed * dt, z: rot.z });
-      if (rotating) raf = requestAnimationFrame(frame);
+      sky.setAttribute('rotation',{x:rot.x, y:rot.y+speed*dt, z:rot.z});
+      if (rotating) raf=requestAnimationFrame(step);
     }
-    raf = requestAnimationFrame(frame);
+    raf=requestAnimationFrame(step);
+  }
+  function stopRotate(){
+    rotating=false;
+    toggleRotateBtn.textContent='Auto-rotate: Off';
+    if(raf) cancelAnimationFrame(raf);
+  }
+  toggleRotateBtn.onclick=()=> rotating?stopRotate():startRotate();
+
+  // VR
+  enterVRBtn.onclick=async()=>{
+    const scene=document.querySelector('a-scene');
+    if(scene.is('vr-mode')) scene.exitVR();
+    else await scene.enterVR().catch(err=>alert('VR failed: '+err));
+  };
+
+  // Fullscreen & double-tap
+  fullscreenBtn.onclick=toggleFullscreen;
+  let lastTap=0;
+  document.addEventListener('touchend',e=>{
+    const now=Date.now();
+    if(now-lastTap<350){toggleFullscreen(); lastTap=0;} else lastTap=now;
+  });
+  function toggleFullscreen(){
+    if(!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+    else document.exitFullscreen?.();
   }
 
-  function stopRotate() {
-    rotating = false;
-    document.getElementById('toggleRotate').textContent = 'Auto-rotate: Off';
-    if (raf) cancelAnimationFrame(raf);
-    raf = null;
+  // Gyro (iOS permission)
+  function isIOS13plus(){return typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function';}
+  async function requestGyroPermission(){
+    try{
+      const res=await DeviceMotionEvent.requestPermission();
+      if(res==='granted'){gyroPrompt.style.display='none'; enableGyroBtn.style.display='none'; alert('Motion enabled. Rotate your phone!');}
+      else alert('Motion denied. Use touch to look around.');
+    }catch(e){alert('Motion request error: '+e);}
   }
+  enableGyroBtn.onclick=()=>{ if(isIOS13plus()) gyroPrompt.style.display='block'; else alert('If your device has sensors, it should work automatically.'); };
+  gyroAllowBtn.onclick=()=>requestGyroPermission();
+  gyroCancelBtn.onclick=()=>gyroPrompt.style.display='none';
 
-  document.getElementById('toggleRotate').addEventListener('click', () => {
-    if (rotating) stopRotate(); else startRotate();
-  });
-
-  // VR button
-  document.getElementById('enterVR').addEventListener('click', async () => {
-    const scene = document.querySelector('a-scene');
-    if (!scene) return;
-    try {
-      if (scene.is('vr-mode')) scene.exitVR();
-      else await scene.enterVR();
-    } catch (err) {
-      alert('Unable to enter VR: ' + (err.message || err));
-    }
-  });
-
-  // Fullscreen button
-  document.getElementById('fullscreenBtn').addEventListener('click', () => {
-    const el = document.documentElement;
-    if (!document.fullscreenElement) el.requestFullscreen().catch(() => {});
-    else document.exitFullscreen();
-  });
-
-  // Allow changing image via URL param ?img=https://example.com/pano.jpg
-  (function() {
-    try {
-      const p = new URLSearchParams(location.search);
-      const img = p.get('img');
-      if (img) {
-        const pan = document.getElementById('panorama');
-        pan.src = img;
-        // force reload of sky texture
-        setTimeout(() => { sky.setAttribute('src', '#panorama'); }, 100);
-      }
-    } catch(e){}
+  // Replace image via ?img=URL
+  (()=>{
+    const p=new URLSearchParams(location.search);
+    const img=p.get('img');
+    if(img){const pan=document.getElementById('panorama'); pan.src=img; setTimeout(()=>sky.setAttribute('src','#panorama'),200);}
   })();
 </script>
 

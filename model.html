@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>GLB Model Viewer — Responsive</title>
+
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
+  <!-- Orbit-controls component (provides orbit camera controls) -->
+  <script src="https://unpkg.com/aframe-orbit-controls-component@0.3.0/dist/aframe-orbit-controls-component.min.js"></script>
+
+  <style>
+    :root{
+      --ui-bg: rgba(0,0,0,0.45);
+      --btn-bg: rgba(255,255,255,0.08);
+      --btn-radius: 12px;
+      --btn-padding: 10px 12px;
+      --safe-bottom: env(safe-area-inset-bottom, 12px);
+    }
+    html,body{height:100%;margin:0;background:#111;color:#fff;font-family:Inter,system-ui,Arial}
+    /* Controls */
+    #controls{
+      position:absolute; z-index:1500; display:flex; gap:10px; flex-wrap:wrap;
+      pointer-events: auto;
+    }
+    @media (min-width:701px){
+      #controls{ left:12px; top:12px; flex-direction:row; }
+    }
+    @media (max-width:700px){
+      #controls{ left:50%; bottom: calc(var(--safe-bottom) + 14px); transform: translateX(-50%); flex-direction: row; gap:8px; }
+    }
+    .btn{
+      background:var(--btn-bg); border:1px solid rgba(255,255,255,0.06); color:#fff;
+      padding:var(--btn-padding); border-radius:var(--btn-radius); cursor:pointer; font-size:14px;
+      display:inline-flex; align-items:center; gap:8px; min-height:40px;
+      user-select:none; -webkit-user-select:none;
+    }
+    .btn:active{ transform: translateY(1px); }
+
+    /* Small input disguised as button */
+    #fileInput{ display:none; }
+
+    /* Info panel (top-right desktop only) */
+    #info {
+      position:absolute; right:12px; top:12px; z-index:1400; background:var(--ui-bg); padding:10px 12px;
+      border-radius:10px; font-size:13px; max-width:40%;
+    }
+    @media (max-width:700px){ #info{ display:none; } }
+
+    /* Footer note above controls on mobile */
+    #note{ position:absolute; left:50%; transform:translateX(-50%); bottom: calc(var(--safe-bottom) + 72px); z-index:1400;
+      background:var(--ui-bg); padding:8px 10px; border-radius:10px; font-size:13px; display:none; }
+    @media (max-width:700px){ #note{ display:block; } }
+
+    /* Ensure a-scene takes full viewport */
+    a-scene{ width:100%; height:100vh; display:block; }
+
+    /* Small styling for model status */
+    #modelName{ font-weight:600; }
+  </style>
+</head>
+<body>
+
+  <!-- Controls -->
+  <div id="controls" role="toolbar" aria-label="Viewer controls">
+    <label for="fileInput" class="btn" title="Load .glb/.gltf from your device" style="cursor:pointer;">
+      Load file
+    </label>
+    <input id="fileInput" type="file" accept=".glb,.gltf,.zip" />
+
+    <button id="loadUrlBtn" class="btn" title="Load model from URL param ?model=">Load URL</button>
+    <button id="resetBtn" class="btn" title="Reset camera & model position">Reset</button>
+    <button id="fullscreenBtn" class="btn" title="Toggle fullscreen">Fullscreen</button>
+    <button id="enterVrBtn" class="btn" title="Enter VR (HTTPS required)">Enter VR</button>
+  </div>
+
+  <div id="info" aria-hidden="false">
+    <div id="modelName">No model loaded</div>
+    <div style="margin-top:6px; font-size:12px; color:#ddd">Drag to rotate · pinch to zoom · double-tap fullscreen</div>
+  </div>
+
+  <div id="note">Tap "Load file" to pick a .glb from your device, or open with `?model=https://.../model.glb`</div>
+
+  <!-- A-Frame Scene -->
+  <a-scene embedded vr-mode-ui="enabled: true" background="color: #000">
+    <a-assets id="assets">
+      <!-- default placeholder model (optional) -->
+       <a-asset-item id="defaultModel" src="example-model.glb"></a-asset-item>
+    </a-assets>
+
+    <!-- Camera with orbit controls (target will be updated to model position) -->
+    <a-entity id="cameraRig">
+      <a-entity id="camera" camera position="0 1.6 3"
+                orbit-controls="target: 0 1 0; enableDamping: true; dampingFactor: 0.125; rotateSpeed:0.4; autoRotate:false; enableZoom:true; minDistance:0.6; maxDistance:20">
+      </a-entity>
+    </a-entity>
+
+    <!-- Lights -->
+    <a-entity light="type: ambient; intensity: 0.6"></a-entity>
+    <a-entity light="type: directional; intensity: 0.9" position="1 3 2"></a-entity>
+    <a-entity light="type: directional; intensity: 0.4" position="-2 1 -1"></a-entity>
+
+    <!-- Ground / shadow catcher -->
+    <a-plane rotation="-90 0 0" width="50" height="50" color="#111" material="roughness:1;metalness:0" position="0 0 0"></a-plane>
+
+    <!-- Container for loaded model -->
+    <a-entity id="modelRoot" position="0 0 0" rotation="0 0 0" scale="1 1 1" visible="false"></a-entity>
+
+  </a-scene>
+
+<script>
+/*
+  Responsive GLB viewer script
+  Features:
+  - Load .glb/.gltf from local file picker
+  - Load remote model via URL param ?model=...
+  - Reset camera & model transform
+  - Fullscreen & VR entry
+  - Keeps UI responsive (no overlaps)
+*/
+
+const fileInput = document.getElementById('fileInput');
+const loadUrlBtn = document.getElementById('loadUrlBtn');
+const resetBtn = document.getElementById('resetBtn');
+const fullscreenBtn = document.getElementById('fullscreenBtn');
+const enterVrBtn = document.getElementById('enterVrBtn');
+const modelRoot = document.getElementById('modelRoot');
+const modelName = document.getElementById('modelName');
+const scene = document.querySelector('a-scene');
+const camera = document.querySelector('#camera');
+
+let currentModelEntity = null;
+let currentUrlObject = null; // for blob URL cleanup
+
+// Helper: remove existing model
+function clearModel() {
+  if (currentModelEntity) {
+    currentModelEntity.parentNode.removeChild(currentModelEntity);
+    currentModelEntity = null;
+  }
+  if (currentUrlObject) {
+    URL.revokeObjectURL(currentUrlObject);
+    currentUrlObject = null;
+  }
+  modelRoot.setAttribute('visible', false);
+  modelName.textContent = 'No model loaded';
+}
+
+// Load model from a URL (can be blob URL)
+async function loadModelFromUrl(url, name) {
+  try {
+    clearModel();
+    // create an entity and set gltf-model
+    const ent = document.createElement('a-entity');
+    ent.setAttribute('gltf-model', url);
+    ent.setAttribute('position', '0 0 0');
+    ent.setAttribute('rotation', '0 0 0');
+    ent.setAttribute('scale', '1 1 1');
+    ent.addEventListener('model-loaded', (ev) => {
+      // adjust model: compute bounding box and center camera target
+      const obj = ev.detail.model || ent.getObject3D('mesh') || ev.detail;
+      try {
+        // calculate bounding box
+        const threeObj = ent.getObject3D('mesh') || ent.getObject3D('gltf');
+        if (threeObj) {
+          const box = new THREE.Box3().setFromObject(threeObj);
+          const size = new THREE.Vector3();
+          const center = new THREE.Vector3();
+          box.getSize(size);
+          box.getCenter(center);
+          // position modelRoot so center is at 0
+          ent.object3D.position.x -= center.x;
+          ent.object3D.position.y -= center.y;
+          ent.object3D.position.z -= center.z;
+          // Place modelRoot at ground if model sits around origin: raise by half height
+          const approxHeight = size.y || 1;
+          // scale model if too large or too small
+          const maxDim = Math.max(size.x, size.y, size.z);
+          if (maxDim > 5 || maxDim < 0.1) {
+            const uniformScale = 1 / maxDim;
+            ent.object3D.scale.setScalar(uniformScale * 1.2); // modest scaling
+          }
+          // Set camera orbit target to model center
+          const target = `${0} ${approxHeight*0.5} ${0}`;
+          camera.setAttribute('orbit-controls', 'target', target);
+        }
+      } catch(e){ console.warn('model adjustment failed', e); }
+      modelRoot.setAttribute('visible', true);
+      modelName.textContent = name || url.split('/').pop();
+    }, { once: true });
+    modelRoot.appendChild(ent);
+    currentModelEntity = ent;
+  } catch (err) {
+    console.error('Failed to load model:', err);
+    alert('Failed to load model. See console for details.');
+  }
+}
+
+// File input -> load blob URL
+fileInput.addEventListener('change', async (ev) => {
+  const f = ev.target.files && ev.target.files[0];
+  if (!f) return;
+  const ext = f.name.split('.').pop().toLowerCase();
+  if (!['glb','gltf'].includes(ext)) {
+    alert('Please select a .glb or .gltf file');
+    return;
+  }
+  const blobUrl = URL.createObjectURL(f);
+  currentUrlObject = blobUrl;
+  await loadModelFromUrl(blobUrl, f.name);
+});
+
+// Load from URL prompt or URL param ?model=
+loadUrlBtn.addEventListener('click', async () => {
+  const promptUrl = prompt('Enter direct URL to .glb/.gltf (must be CORS-enabled):', '');
+  if (!promptUrl) return;
+  await loadModelFromUrl(promptUrl, promptUrl.split('/').pop());
+});
+
+// Reset: remove and reset camera
+resetBtn.addEventListener('click', () => {
+  // remove model and reset camera
+  if (currentModelEntity) {
+    // re-center current model by reloading it (simpler) — or just reset camera
+    // reset camera position & orbit target
+    camera.setAttribute('position', '0 1.6 3');
+    camera.setAttribute('orbit-controls', 'target: 0 1 0; enableDamping: true; dampingFactor:0.125; rotateSpeed:0.4;');
+  }
+});
+
+// Fullscreen
+fullscreenBtn.addEventListener('click', () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen?.().catch(()=>{});
+  } else document.exitFullscreen?.();
+});
+
+// VR entry
+enterVrBtn.addEventListener('click', async () => {
+  try {
+    if (scene.is('vr-mode')) scene.exitVR();
+    else await scene.enterVR();
+  } catch (e) {
+    alert('Unable to enter VR. Make sure the page is served over HTTPS and the device supports WebXR.');
+  }
+});
+
+// On load: check URL param ?model=
+(function checkUrlParam(){
+  try {
+    const params = new URLSearchParams(location.search);
+    const modelUrl = params.get('model');
+    if (modelUrl) {
+      loadModelFromUrl(modelUrl, modelUrl.split('/').pop());
+    }
+  } catch(e){}
+})();
+
+// Prevent accidental page pinch-zoom on mobile while interacting
+document.addEventListener('gesturestart', (e) => { e.preventDefault(); }, { passive:false });
+
+</script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-  <title>360 + GLB — Move / Rotate (snap back)</title>
+  <title>360 + GLB — Realistic Standing Model</title>
 
   <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
   <script src="https://unpkg.com/aframe-orbit-controls-component@0.3.0/dist/aframe-orbit-controls-component.min.js"></script>
@@ -12,277 +12,255 @@
     :root{
       --ui-bg: rgba(0,0,0,0.45);
       --btn-bg: rgba(255,255,255,0.08);
-      --btn-radius: 12px;
+      --btn-radius: 10px;
       --btn-padding: 10px 12px;
-      --safe-bottom: env(safe-area-inset-bottom,12px);
+      --safe-bottom: env(safe-area-inset-bottom, 12px);
     }
     html,body{height:100%;margin:0;background:#000;color:#fff;font-family:Inter,system-ui,Arial}
     a-scene{width:100%;height:100vh;display:block}
-    #controls{position:absolute;z-index:1500;display:flex;gap:10px;flex-wrap:wrap;pointer-events:auto}
-    @media(min-width:701px){#controls{left:12px;top:12px}}
-    @media(max-width:700px){#controls{left:50%;bottom:calc(var(--safe-bottom)+14px);transform:translateX(-50%) }}
-    .btn{background:var(--btn-bg);border:1px solid rgba(255,255,255,0.06);color:#fff;padding:var(--btn-padding);border-radius:var(--btn-radius);cursor:pointer;font-size:14px}
-    .btn:active{transform:translateY(1px)}
-    .btn.toggle { min-width:54px; text-align:center; }
-    #info{position:absolute;right:12px;top:12px;z-index:1400;background:var(--ui-bg);padding:8px 12px;border-radius:10px;font-size:13px}
-    @media(max-width:700px){#info{display:none}}
-    #handle {
-      position:absolute; right:12px; bottom:12px; z-index:1600;
-      background:rgba(255,255,255,0.06); padding:6px 8px; border-radius:999px; font-size:13px;
-      display:flex; gap:8px; align-items:center;
-    }
-    #handle .dot { width:10px; height:10px; border-radius:50%; background:#0ff; opacity:0.85; }
+    /* Controls */
+    #controls{position:absolute;z-index:1500;display:flex;gap:8px;flex-wrap:wrap;pointer-events:auto}
+    @media (min-width:701px) { #controls{ left:12px; top:12px;} }
+    @media (max-width:700px) { #controls{ left:50%; bottom:calc(var(--safe-bottom)+12px); transform:translateX(-50%); } }
+    .btn{ background:var(--btn-bg); border:1px solid rgba(255,255,255,0.06); color:#fff; padding:var(--btn-padding); border-radius:var(--btn-radius); cursor:pointer; font-size:14px; }
+    .btn:active{ transform:translateY(1px); }
+    #info{ position:absolute; right:12px; top:12px; z-index:1400; background:var(--ui-bg); padding:8px 12px; border-radius:10px; font-size:13px; }
+    @media (max-width:700px){ #info { display:none; } }
+    /* contact shadow style (on-screen helper) */
+    #hint { position:absolute; left:12px; bottom:12px; z-index:1600; background:var(--ui-bg); padding:6px 8px; border-radius:8px; font-size:12px; }
   </style>
 </head>
 <body>
 
-  <!-- Controls -->
-  <div id="controls" role="toolbar" aria-label="viewer controls">
+  <div id="controls" role="toolbar">
     <button id="modeBtn" class="btn">View model</button>
-    <button id="moveRotateBtn" class="btn toggle">Move</button>
     <button id="resetBtn" class="btn">Reset</button>
     <button id="fullscreenBtn" class="btn">Fullscreen</button>
     <button id="enterVrBtn" class="btn">Enter VR</button>
   </div>
 
   <div id="info">Mode: <span id="modeLabel">Panorama</span></div>
-  <div id="handle" title="Drag the model when in Model mode">
-    <div class="dot"></div><div style="opacity:0.9">Drag handle</div>
-  </div>
+  <div id="hint">Model scaled to approx. human height (1.7 m). Toggle to Model view to inspect.</div>
 
-  <!-- Scene -->
   <a-scene embedded vr-mode-ui="enabled:true" background="color:#000">
     <a-assets>
-      <img id="panorama" src="image.jpg" crossorigin="anonymous">
-      <a-asset-item id="theModel" src="example-model.glb"></a-asset-item>
+      <img id="panorama" src="image.jpg" crossorigin="anonymous" alt="panorama">
+      <a-asset-item id="modelAsset" src="example-model.glb"></a-asset-item>
+      <!-- tiny radial gradient texture for contact shadow (generated inline SVG data URI) -->
+      <img id="shadowTex" crossorigin="anonymous" src='data:image/svg+xml;utf8,
+        <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">
+          <defs>
+            <radialGradient id="g" cx="50%" cy="40%" r="50%">
+              <stop offset="0%" stop-color="black" stop-opacity="0.65"/>
+              <stop offset="55%" stop-color="black" stop-opacity="0.25"/>
+              <stop offset="100%" stop-color="black" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+          <rect width="100%" height="100%" fill="url(%23g)"/>
+        </svg>'>
     </a-assets>
 
+    <!-- Panorama sky -->
     <a-sky id="sky" src="#panorama" rotation="0 -90 0" material="shader:flat"></a-sky>
 
+    <!-- Camera: default panorama look-controls; in Model mode we swap in orbit-controls -->
     <a-entity id="cameraRig">
-      <a-entity id="mainCamera" camera="fov:60" position="0 1.6 0"
+      <a-entity id="mainCamera" camera="fov:60" position="0 1.65 0" 
                 look-controls="enabled:true; magicWindowTrackingEnabled:true">
       </a-entity>
     </a-entity>
 
-    <a-entity light="type: ambient; intensity:0.9"></a-entity>
-    <a-entity light="type: directional; intensity:1" position="1 3 2"></a-entity>
-    <a-entity light="type: directional; intensity:0.6" position="-2 1 -1"></a-entity>
+    <!-- Lighting: hemisphere + directional to make model look natural in scene -->
+    <a-entity light="type: hemisphere; skyColor: #ffffff; groundColor: #666666; intensity: 0.9"></a-entity>
+    <a-entity light="type: directional; intensity: 1.2" position="1 4 2" rotation="-40 30 0"></a-entity>
+    <a-entity light="type: directional; intensity: 0.5" position="-2 1 -1"></a-entity>
 
-    <a-plane id="ground" rotation="-90 0 0" width="50" height="50" color="#222" material="roughness:1;metalness:0"></a-plane>
+    <!-- Optional (invisible) ground for collisions / reference; keep invisible to avoid visible grey plane -->
+    <a-plane id="ground" rotation="-90 0 0" width="200" height="200" color="#000" visible="false"></a-plane>
 
-    <a-entity id="modelRoot" position="0 0 -3" rotation="0 0 0" scale="1 1 1" visible="true" gltf-model="#theModel"></a-entity>
+    <!-- Contact shadow: textured circle placed under the model, aligned to modelRoot world xz -->
+    <a-entity id="contactShadow" geometry="primitive: circle; radius: 1.0" rotation="-90 0 0" position="0 0.01 0" material="src:#shadowTex; transparent:true; opacity:0.9; side:double" visible="false"></a-entity>
+
+    <!-- Model root: auto-fit will center and scale the model to ~1.7m tall and place base at y=0 -->
+    <!-- initial local position a few meters forward so it doesn't block panorama view -->
+    <a-entity id="modelRoot" position="0 0 -3" rotation="0 0 0" scale="1 1 1" visible="false" gltf-model="#modelAsset"></a-entity>
   </a-scene>
 
 <script>
+/* Viewer behavior
+ - Auto-fit model to target height (meters) and center it on the ground (y=0)
+ - Place a soft contact shadow under the model and keep it aligned with model's XZ
+ - Toggle between Panorama and Model (orbit) modes
+ - Reset, Fullscreen, Enter VR
+*/
 (function(){
+  const TARGET_HEIGHT = 1.7; // target human height in meters for the model top -> adjust if needed
+
   const modeBtn = document.getElementById('modeBtn');
-  const moveRotateBtn = document.getElementById('moveRotateBtn');
-  const modeLabel = document.getElementById('modeLabel');
   const resetBtn = document.getElementById('resetBtn');
   const fullscreenBtn = document.getElementById('fullscreenBtn');
   const enterVrBtn = document.getElementById('enterVrBtn');
+  const modeLabel = document.getElementById('modeLabel');
 
-  const cameraEl = document.getElementById('mainCamera');
   const sceneEl = document.querySelector('a-scene');
+  const cameraEl = document.getElementById('mainCamera');
   const modelRoot = document.getElementById('modelRoot');
+  const contactShadow = document.getElementById('contactShadow');
 
-  let mode = 'panorama'; 
+  let mode = 'panorama'; // 'panorama' or 'model'
   let fitted = false;
   let modelCenter = { x:0, y:0, z:0 };
-
-  let dragMode = 'move'; 
-  moveRotateBtn.textContent = 'Move';
-  moveRotateBtn.addEventListener('click', () => {
-    dragMode = (dragMode === 'move') ? 'rotate' : 'move';
-    moveRotateBtn.textContent = (dragMode === 'move') ? 'Move' : 'Rotate';
-  });
-
-  let original = { localPos:new THREE.Vector3(0,0,-3), localRot:new THREE.Euler(0,0,0), localScale:new THREE.Vector3(1,1,1) };
-
-  function saveOriginalTransform(){
-    original.localPos = modelRoot.object3D.position.clone();
-    original.localRot = modelRoot.object3D.rotation.clone();
-    original.localScale = modelRoot.object3D.scale.clone();
-  }
-
-  function animateSnapBack(duration = 600){
-    const startPos = modelRoot.object3D.position.clone();
-    const startRot = modelRoot.object3D.rotation.clone();
-    const startScale = modelRoot.object3D.scale.clone();
-    const endPos = original.localPos.clone();
-    const endRot = original.localRot.clone();
-    const endScale = original.localScale.clone();
-    const start = performance.now();
-    function step(now){
-      const t = Math.min(1, (now-start)/duration);
-      const u = 1 - Math.pow(1 - t, 3);
-      modelRoot.object3D.position.lerpVectors(startPos, endPos, u);
-      const qa = new THREE.Quaternion().setFromEuler(startRot);
-      const qb = new THREE.Quaternion().setFromEuler(endRot);
-      THREE.Quaternion.slerp(qa, qb, modelRoot.object3D.quaternion, u);
-      modelRoot.object3D.rotation.setFromQuaternion(modelRoot.object3D.quaternion, 'YXZ');
-      modelRoot.object3D.scale.lerpVectors(startScale, endScale, u);
-      if(t<1) requestAnimationFrame(step);
-      else {
-        modelRoot.object3D.position.copy(endPos);
-        modelRoot.object3D.rotation.copy(endRot);
-        modelRoot.object3D.scale.copy(endScale);
-      }
-    }
-    requestAnimationFrame(step);
-  }
+  let lastShadowRadius = 1.0;
 
   function setMode(newMode){
     if(newMode === mode) return;
     mode = newMode;
-    modeLabel.textContent = (mode === 'panorama') ? 'Panorama' : 'Model';
+    modeLabel.textContent = mode === 'panorama' ? 'Panorama' : 'Model';
     if(mode === 'model'){
+      // disable look-controls, enable orbit-controls and frame the model
       cameraEl.removeAttribute('look-controls');
       const target = `${modelCenter.x} ${modelCenter.y} ${modelCenter.z}`;
-      cameraEl.setAttribute('orbit-controls', `target: ${target}; enableDamping: true; dampingFactor:0.125; rotateSpeed:0.6; enableZoom:true;`);
-      cameraEl.object3D.position.set(modelCenter.x, Math.max(modelCenter.y+0.6,1.2), modelCenter.z+2.5);
-      modeBtn.textContent = 'Back to panorama';
-      saveOriginalTransform();
+      cameraEl.setAttribute('orbit-controls', `target: ${target}; enableDamping: true; dampingFactor: 0.125; rotateSpeed: 0.6; enableZoom:true; minDistance:0.5; maxDistance:20`);
+      // position camera at eye height a few meters back from model center
+      cameraEl.object3D.position.set(modelCenter.x, Math.max(modelCenter.y + 1.5, 1.6), modelCenter.z + Math.max(1.8, 1.8));
     } else {
+      // restore look controls and camera to panorama eye height
       cameraEl.removeAttribute('orbit-controls');
       cameraEl.setAttribute('look-controls','enabled:true; magicWindowTrackingEnabled:true');
-      cameraEl.object3D.position.set(0,1.6,0);
-      modeBtn.textContent = 'View model';
+      cameraEl.object3D.position.set(0, 1.65, 0);
     }
   }
 
-  modeBtn.addEventListener('click',()=> setMode(mode==='panorama'?'model':'panorama'));
-
-  resetBtn.addEventListener('click',()=> {
+  modeBtn.addEventListener('click', () => setMode(mode === 'panorama' ? 'model' : 'panorama'));
+  resetBtn.addEventListener('click', () => {
     setMode('panorama');
-    cameraEl.object3D.position.set(0,1.6,0);
-    cameraEl.setAttribute('orbit-controls','target:0 0 0');
-    modelRoot.object3D.position.set(0,0,-3);
-    modelRoot.object3D.rotation.set(0,0,0);
-    modelRoot.object3D.scale.set(1,1,1);
+    cameraEl.object3D.position.set(0,1.65,0);
+    cameraEl.setAttribute('orbit-controls', 'target:0 0 0');
+    // reset model local transform to fitted original position
+    // we'll re-run fitting if needed
+    if(fitted) {
+      // no-op (model is already centered); if you want to force re-fit, reload asset or implement re-fit handler.
+      modelRoot.object3D.position.set(0,0,-3);
+      modelRoot.object3D.rotation.set(0,0,0);
+    }
   });
 
-  fullscreenBtn.addEventListener('click',()=> {
+  fullscreenBtn.addEventListener('click', () => {
     if(!document.fullscreenElement) document.documentElement.requestFullscreen?.();
     else document.exitFullscreen?.();
   });
 
-  enterVrBtn.addEventListener('click',async()=> {
-    try{ if(sceneEl.is('vr-mode')) sceneEl.exitVR(); else await sceneEl.enterVR(); }
-    catch(e){ alert('VR requires HTTPS/localhost and a compatible device.'); }
-  });
-
-  modelRoot.addEventListener('model-loaded',(ev)=> {
+  enterVrBtn.addEventListener('click', async () => {
     try {
-      const loaded = ev.detail && ev.detail.model ? ev.detail.model : modelRoot.getObject3D('mesh')||modelRoot.getObject3D('gltf');
-      const obj = (loaded&&loaded.scene)?loaded.scene:loaded;
-      if(!obj) return;
-      const box = new THREE.Box3().setFromObject(obj);
-      const size = new THREE.Vector3(); const center = new THREE.Vector3();
-      box.getSize(size); box.getCenter(center);
-      const minY = box.min.y;
-      obj.position.x -= center.x;
-      obj.position.y -= minY;
-      obj.position.z -= center.z;
-      const maxDim = Math.max(size.x,size.y,size.z,0.0001);
-      let baseScale = 1;
-      if(maxDim>4) baseScale=1.0/maxDim*1.2;
-      if(maxDim<0.2) baseScale=1.0/maxDim*0.8;
-      const userShrink=0.35;
-      modelRoot.object3D.scale.setScalar(baseScale*userShrink);
-      const box2=new THREE.Box3().setFromObject(obj);
-      const center2=new THREE.Vector3(); box2.getCenter(center2);
-      modelCenter={x:center2.x,y:center2.y,z:center2.z};
-      modelRoot.setAttribute('visible',true);
-      fitted=true;
-      saveOriginalTransform();
-    } catch(e){ console.error('auto-fit error',e); }
+      if(sceneEl.is('vr-mode')) sceneEl.exitVR();
+      else await sceneEl.enterVR();
+    } catch(e) {
+      alert('VR requires HTTPS/localhost and a compatible device/browser.');
+    }
   });
 
-  // Drag & rotate logic
-  let isDragging=false;
-  const raycaster=new THREE.Raycaster();
-  const mouse=new THREE.Vector2();
-  const dragPlane=new THREE.Plane();
-  const dragOffset=new THREE.Vector3();
-  const tmpVec=new THREE.Vector3();
-
-  function getCanvasPoint(event){
-    let clientX,clientY;
-    if(event.touches&&event.touches.length){clientX=event.touches[0].clientX;clientY=event.touches[0].clientY;}
-    else if(event.changedTouches&&event.changedTouches.length){clientX=event.changedTouches[0].clientX;clientY=event.changedTouches[0].clientY;}
-    else{clientX=event.clientX;clientY=event.clientY;}
-    const rect=sceneEl.canvas.getBoundingClientRect();
-    mouse.x=((clientX-rect.left)/rect.width)*2-1;
-    mouse.y=-((clientY-rect.top)/rect.height)*2+1;
-    return {clientX,clientY};
-  }
-
-  function pointerDown(ev){
-    if(mode!=='model'||!fitted) return;
-    getCanvasPoint(ev);
-    const threeCam=cameraEl.getObject3D('camera'); if(!threeCam) return;
-    raycaster.setFromCamera(mouse,threeCam);
-    const meshes=[]; modelRoot.object3D.traverse(c=>{if(c.isMesh) meshes.push(c);});
-    const hits=raycaster.intersectObjects(meshes,true);
-    if(hits.length===0) return;
-    const hit=hits[0]; const hitPoint=hit.point.clone();
-    if(dragMode==='move'){
-      threeCam.getWorldDirection(tmpVec);
-      dragPlane.setFromNormalAndCoplanarPoint(tmpVec.clone().normalize(),hitPoint);
-      modelRoot.object3D.getWorldPosition(tmpVec);
-      dragOffset.copy(tmpVec).sub(hitPoint);
-    }
-    isDragging=true;
-    cameraEl.removeAttribute('orbit-controls');
-    ev.preventDefault&&ev.preventDefault();
-  }
-
-  function pointerMove(ev){
-    if(!isDragging) return;
-    getCanvasPoint(ev);
-    const threeCam=cameraEl.getObject3D('camera'); if(!threeCam) return;
-    if(dragMode==='move'){
-      raycaster.setFromCamera(mouse,threeCam);
-      if(raycaster.ray.intersectPlane(dragPlane,tmpVec)){
-        const desired=tmpVec.clone().add(dragOffset);
-        modelRoot.object3D.position.copy(desired);
+  // When the model loads, compute bounding box, scale the model
+  modelRoot.addEventListener('model-loaded', (ev) => {
+    try {
+      // loaded THREE object
+      const loaded = ev.detail && ev.detail.model ? ev.detail.model : modelRoot.getObject3D('mesh') || modelRoot.getObject3D('gltf');
+      const obj = (loaded && loaded.scene) ? loaded.scene : loaded;
+      if(!obj) {
+        console.warn('Model object not found, cannot auto-fit.');
+        modelRoot.setAttribute('visible', true);
+        return;
       }
-    } else {
-      if(typeof pointerMove.last==='undefined'){pointerMove.last={x:ev.clientX||0,y:ev.clientY||0};}
-      const curX=ev.clientX||0,curY=ev.clientY||0;
-      const dx=curX-pointerMove.last.x,dy=curY-pointerMove.last.y;
-      pointerMove.last.x=curX; pointerMove.last.y=curY;
-      modelRoot.object3D.rotation.y += -dx*0.005;
-      modelRoot.object3D.rotation.x += -dy*0.003;
-      modelRoot.object3D.rotation.x=Math.max(-Math.PI/4,Math.min(Math.PI/4,modelRoot.object3D.rotation.x));
-    }
-  }
 
-  function pointerUp(){
-    if(!isDragging) return;
-    isDragging=false; pointerMove.last=undefined;
-    animateSnapBack(600);
-    if(mode==='model'){
-      const target=`${modelCenter.x} ${modelCenter.y} ${modelCenter.z}`;
-      cameraEl.setAttribute('orbit-controls',`target:${target}; enableDamping:true; dampingFactor:0.125; rotateSpeed:0.6; enableZoom:true;`);
-    }
-  }
+      // compute bounding box of object
+      const box = new THREE.Box3().setFromObject(obj);
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      box.getSize(size);
+      box.getCenter(center);
 
-  sceneEl.addEventListener('renderstart',()=>{
-    const canvas=sceneEl.canvas;
-    if(!canvas) return;
-    canvas.addEventListener('pointerdown',pointerDown,{passive:false});
-    canvas.addEventListener('pointermove',pointerMove,{passive:false});
-    window.addEventListener('pointerup',pointerUp,{passive:true});
-    canvas.addEventListener('touchstart',pointerDown,{passive:false});
-    canvas.addEventListener('touchmove',pointerMove,{passive:false});
-    window.addEventListener('touchend',pointerUp,{passive:true});
+      // compute natural model height (max y - min y)
+      const modelHeight = size.y || 1.0;
+
+      // target scale so modelHeight becomes TARGET_HEIGHT
+      const scaleFactor = TARGET_HEIGHT / modelHeight;
+
+      // apply centering and scale:
+      // 1) move so that the model's bottom sits at y=0 (on the scene floor)
+      const minY = box.min.y;
+      // translate object so minY -> 0, and center.x,z -> 0 (so model base is centered)
+      obj.position.x -= center.x;
+      obj.position.z -= center.z;
+      obj.position.y -= minY;
+
+      // 2) scale uniformly to desired height
+      modelRoot.object3D.scale.setScalar(scaleFactor);
+
+      // recompute bounding box after transforms
+      const box2 = new THREE.Box3().setFromObject(obj);
+      const size2 = new THREE.Vector3(); const center2 = new THREE.Vector3();
+      box2.getSize(size2); box2.getCenter(center2);
+
+      // store center (in modelRoot local coordinates)
+      modelCenter = { x: center2.x, y: center2.y, z: center2.z };
+
+      // show model and contact shadow
+      modelRoot.setAttribute('visible', true);
+      contactShadow.setAttribute('visible', true);
+
+      // compute a reasonable shadow radius (based on model footprint)
+      const footprint = Math.max(size2.x, size2.z) * 0.6;
+      const shadowRadius = Math.max(0.35, footprint);
+      contactShadow.setAttribute('geometry', `primitive: circle; radius: ${shadowRadius}`);
+      contactShadow.object3D.position.set(center2.x, 0.01, center2.z);
+      contactShadow.object3D.rotation.set(-Math.PI/2, 0, 0);
+      contactShadow.object3D.scale.set(1,1,1);
+      lastShadowRadius = shadowRadius;
+
+      fitted = true;
+      console.log('Auto-fit complete. modelHeight:', modelHeight, 'scaleFactor:', scaleFactor, 'modelCenter:', modelCenter);
+    } catch (err) {
+      console.error('Auto-fit failed:', err);
+      modelRoot.setAttribute('visible', true);
+    }
   });
 
-  // start in panorama
-  setTimeout(()=> setMode('panorama'),50);
+  // keep contact shadow aligned to model each frame (in case model moves/animates)
+  sceneEl.addEventListener('renderstart', () => {
+    sceneEl.addEventListener('frame', () => {
+      if(!fitted) return;
+      // modelRoot.object3D may have children; compute world position for shadow origin
+      const worldPos = new THREE.Vector3();
+      modelRoot.object3D.getWorldPosition(worldPos);
+      // place contactShadow at same XZ but y just above floor
+      contactShadow.object3D.position.set(worldPos.x, 0.01, worldPos.z);
+      // optionally, scale shadow a tiny bit if model scale changes
+      // (we already set geometry radius at fit time)
+    });
+  });
+
+  // start in panorama mode
+  setTimeout(() => setMode('panorama'), 50);
+
+  // helper setMode used in several places
+  function setMode(m){
+    if(m === mode) return;
+    mode = m;
+    modeLabel.textContent = (mode === 'panorama') ? 'Panorama' : 'Model';
+    if(mode === 'model'){
+      cameraEl.removeAttribute('look-controls');
+      const target = `${modelCenter.x} ${modelCenter.y} ${modelCenter.z}`;
+      cameraEl.setAttribute('orbit-controls', `target: ${target}; enableDamping: true; dampingFactor: 0.125; rotateSpeed: 0.6; enableZoom:true; minDistance:0.5; maxDistance:20`);
+      cameraEl.object3D.position.set(modelCenter.x, Math.max(modelCenter.y + 1.5, 1.6), modelCenter.z + 2.0);
+    } else {
+      cameraEl.removeAttribute('orbit-controls');
+      cameraEl.setAttribute('look-controls','enabled:true; magicWindowTrackingEnabled:true');
+      cameraEl.object3D.position.set(0, 1.65, 0);
+    }
+  }
+
+  // expose setMode to buttons
+  window.setMode = setMode;
+
 })();
 </script>
 
